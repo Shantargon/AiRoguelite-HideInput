@@ -1,4 +1,4 @@
-# Скачивает BepInEx и распаковывает в vendor\ — то, что нужно для сборки мода.
+﻿# Скачивает BepInEx и распаковывает в vendor\ — то, что нужно для сборки мода.
 # Запуск: powershell -ExecutionPolicy Bypass -File tools\get-bepinex.ps1
 
 $ErrorActionPreference = "Stop"

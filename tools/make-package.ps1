@@ -1,4 +1,4 @@
-# Собирает архив, который достаточно распаковать в папку игры.
+﻿# Собирает архив, который достаточно распаковать в папку игры.
 # Запуск: powershell -ExecutionPolicy Bypass -File tools\make-package.ps1
 
 $ErrorActionPreference = "Stop"
