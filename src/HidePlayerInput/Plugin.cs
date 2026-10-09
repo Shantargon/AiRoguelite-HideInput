@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using BepInEx;
@@ -22,28 +23,60 @@ namespace HidePlayerInput
     /// Мы ищем функцию по имени через рефлексию: если игра обновится и что-то переименуют,
     /// мод просто напишет в лог, что не нашёл цель, и не станет ничего ломать.
     /// </summary>
-    [BepInPlugin(Guid, "Скрыть ввод игроков", "1.0.0")]
+    [BepInPlugin(Guid, "Скрыть ввод игроков", "1.1.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "shantargon.airoguelite.hideplayerinput";
 
         internal static ManualLogSource Log;
 
+        internal static ConfigEntry<bool> CfgEnabled;
         internal static ConfigEntry<string> CfgMode;
         internal static ConfigEntry<string> CfgFormat;
         internal static ConfigEntry<bool> CfgBlockClickToEdit;
+        internal static ConfigEntry<bool> CfgHideTooltip;
+        internal static ConfigEntry<bool> CfgPerKind;
+
+        /// <summary>Заглушка для каждого вида действия: вид -> настройка.</summary>
+        internal static readonly Dictionary<string, ConfigEntry<string>> CfgKinds =
+            new Dictionary<string, ConfigEntry<string>>();
+
+        private static readonly string[][] KindDefaults =
+        {
+            new[] { ActionKinds.Free, "{имя} совершает действие" },
+            new[] { "разговор", "{имя} с кем-то говорит" },
+            new[] { "предмет", "{имя} использует предмет" },
+            new[] { "умение", "{имя} применяет умение" },
+            new[] { "атака", "{имя} атакует" },
+            new[] { "ломает", "{имя} что-то ломает" },
+            new[] { "крафт", "{имя} что-то создаёт" },
+            new[] { "обыск", "{имя} кого-то обыскивает" },
+            new[] { "сбор", "{имя} что-то собирает" },
+            new[] { "взаимодействие", "{имя} с чем-то взаимодействует" },
+            new[] { "предложение", "{имя} что-то предлагает" },
+            new[] { "побег", "{имя} пытается убежать" },
+            new[] { "переход", "{имя} куда-то направляется" }
+        };
         internal static ConfigEntry<KeyboardShortcut> CfgToggleKey;
+        internal static ConfigEntry<KeyboardShortcut> CfgPanelKey;
         internal static ConfigEntry<bool> CfgDebugLog;
+        internal static ConfigEntry<bool> CfgDebugShot;
 
         /// <summary>Временный показ по горячей клавише.</summary>
         internal static bool Revealed;
 
         private static Type _glvoType;
         private static Type _editableType;
+        private SettingsPanel _panel;
 
         private void Awake()
         {
             Log = Logger;
+
+            CfgEnabled = Config.Bind("Основное", "Включено", true,
+                new ConfigDescription(
+                    "Главный выключатель. Если false, мод стоит на месте, но ничего не прячет. "
+                    + "Переключается в игре в окне настроек."));
 
             CfgMode = Config.Bind("Основное", "Режим", "все",
                 new ConfigDescription(
@@ -62,15 +95,50 @@ namespace HidePlayerInput
                     "В игре по скрытой строчке можно щёлкнуть и начать её править — тогда она покажет "
                     + "настоящий текст. Если true, по скрытым строчкам щёлкать нельзя."));
 
+            CfgHideTooltip = Config.Bind("Основное", "ЗакрыватьПодсказку", true,
+                new ConfigDescription(
+                    "Если навести мышь на персонажа, игра показывает в подсказке, какое действие он "
+                    + "уже выбрал (ItemTooltip.cs:716). С этой настройкой там тоже будет заглушка."));
+
+            CfgPerKind = Config.Bind("Заглушки", "ПоТипуДействия", true,
+                new ConfigDescription(
+                    "Разные заглушки под разные действия: «говорит», «использует предмет» и так далее. "
+                    + "Если false, на всё будет одна заглушка из настройки «Формат»."));
+
+            foreach (var row in KindDefaults)
+            {
+                var kind = row[0];
+                var key = char.ToUpperInvariant(kind[0]) + kind.Substring(1);
+                CfgKinds[kind] = Config.Bind("Заглушки", key, row[1],
+                    new ConfigDescription("Заглушка для действий вида «" + kind + "». «{имя}» подставляется само."));
+            }
+
             CfgToggleKey = Config.Bind("Основное", "КлавишаПоказать", new KeyboardShortcut(KeyCode.F9),
                 new ConfigDescription(
                     "Клавиша «показать / снова скрыть». Перерисовывает лог целиком, "
                     + "удобно, если надо глянуть, что вообще ушло ИИ."));
 
+            CfgPanelKey = Config.Bind("Основное", "КлавишаНастроек", new KeyboardShortcut(KeyCode.F10),
+                new ConfigDescription(
+                    "Клавиша, которая открывает окно настроек мода прямо в игре."));
+
             CfgDebugLog = Config.Bind("Отладка", "ПисатьВЛог", false,
                 new ConfigDescription(
                     "Писать в BepInEx\\LogOutput.log, что именно было спрятано. "
                     + "Нужно только чтобы проверить, что мод работает: текст игроков попадёт в файл лога."));
+
+            CfgDebugShot = Config.Bind("Отладка", "СнимокЭкранаПриЗапуске", false,
+                new ConfigDescription(
+                    "Отладка: через несколько секунд после запуска само открыть окно настроек и "
+                    + "сохранить снимок экрана в папку игры. Нужно только разработчику мода."));
+
+            _panel = gameObject.AddComponent<SettingsPanel>();
+            if (CfgDebugShot.Value)
+            {
+                // Unity не рисует кадры, когда окно не в фокусе, и снимок так не сделать.
+                Application.runInBackground = true;
+                StartCoroutine(DebugShot());
+            }
 
             var harmony = new Harmony(Guid);
 
@@ -108,12 +176,30 @@ namespace HidePlayerInput
                 Log.LogWarning("Не нашёл EditableTextField/MaybeWireEditableTextField — "
                                + "скрытую строчку можно будет раскрыть кликом по ней.");
             }
+
+            // Третья заплатка: подсказка при наведении на персонажа тоже выдаёт чужой ход.
+            var coordType = AccessTools.TypeByName("MpTurnCoordinator");
+            var queued = coordType == null ? null : AccessTools.Method(coordType, "QueuedTryStrForChar");
+            if (queued != null)
+            {
+                harmony.Patch(queued, postfix: new HarmonyMethod(
+                    AccessTools.Method(typeof(Patches), nameof(Patches.TooltipPostfix))));
+                Log.LogInfo("Патч на подсказку при наведении поставлен.");
+            }
+            else
+            {
+                Log.LogWarning("Не нашёл MpTurnCoordinator.QueuedTryStrForChar — подсказка при "
+                               + "наведении на персонажа может показать, что он задумал.");
+            }
         }
 
         private void Update()
         {
             try
             {
+                if (CfgPanelKey.Value.IsDown() && _panel != null)
+                    _panel.Toggle();
+
                 if (CfgToggleKey.Value.IsDown())
                 {
                     Revealed = !Revealed;
@@ -128,7 +214,7 @@ namespace HidePlayerInput
         }
 
         /// <summary>Перерисовать все строчки лога, чтобы показ/скрытие применились к уже написанному.</summary>
-        private static void RedrawLog()
+        internal static void RedrawLog()
         {
             if (_glvoType == null) return;
             try
@@ -148,9 +234,30 @@ namespace HidePlayerInput
             }
         }
 
+        /// <summary>Отладка: открыть окно и снять экран, чтобы проверить вид окна без участия игрока.</summary>
+        private System.Collections.IEnumerator DebugShot()
+        {
+            // Ждём по настоящим часам: в меню игра может держать время остановленным,
+            // и обычное WaitForSeconds тогда не закончится никогда.
+            yield return WaitRealtime(14f);
+            if (_panel != null && !_panel.Open) _panel.Toggle();
+            yield return WaitRealtime(1.5f);
+            var path = System.IO.Path.Combine(Paths.GameRootPath, "hideplayerinput-panel.png");
+            ScreenCapture.CaptureScreenshot(path);
+            Log.LogInfo("Снимок окна настроек: " + path);
+            ActionKinds.Dump();
+        }
+
+        private static System.Collections.IEnumerator WaitRealtime(float seconds)
+        {
+            var until = Time.realtimeSinceStartup + seconds;
+            while (Time.realtimeSinceStartup < until) yield return null;
+        }
+
         internal static bool HidingActive()
         {
             if (Revealed) return false;
+            if (!CfgEnabled.Value) return false;
             var mode = (CfgMode.Value ?? "").Trim().ToLowerInvariant();
             return mode != "выкл" && mode != "off";
         }
@@ -165,6 +272,14 @@ namespace HidePlayerInput
         /// Имя своего персонажа — SS.I.Manager().GetLocalUiActor().GetPrettyName().
         /// Только через рефлексию и только для режима «чужие». Не получилось — прячем всё.
         /// </summary>
+        /// <summary>Какую заглушку брать для этого вида действия.</summary>
+        internal static string FormatFor(string kind)
+        {
+            ConfigEntry<string> e;
+            if (CfgPerKind.Value && kind != null && CfgKinds.TryGetValue(kind, out e)) return e.Value;
+            return CfgFormat.Value;
+        }
+
         internal static string LocalActorName()
         {
             try
@@ -230,7 +345,7 @@ namespace HidePlayerInput
             if (!string.IsNullOrEmpty(actorName))
             {
                 if (onlyOthers && Same(actorName, me)) return null;
-                return Fill(actorName);
+                return Fill(actorName, ActionKinds.Classify(playerInput));
             }
 
             // Мультиплеерный случай: несколько ходов разом, по строчке на игрока.
@@ -242,19 +357,32 @@ namespace HidePlayerInput
                 var name = ExtractName(line);
 
                 if (name != null && onlyOthers && Same(name, me))
+                {
                     sb.Append(line);        // свой ход оставляем как есть
+                }
                 else
-                    sb.Append(Fill(name));  // имя не разобрали — подставится пустое, текст спрячется целиком
+                {
+                    // имя не разобрали — подставится пустое, текст спрячется целиком
+                    sb.Append(Fill(name, ActionKinds.Classify(ActionPart(line, name))));
+                }
 
                 if (i < lines.Length - 1) sb.Append('\n');
             }
             return sb.ToString();
         }
 
-        /// <summary>Подставить имя в шаблон из настроек.</summary>
-        private static string Fill(string name)
+        /// <summary>Из строчки «Имя: действие» взять только действие.</summary>
+        private static string ActionPart(string line, string name)
         {
-            var fmt = Plugin.CfgFormat.Value ?? "";
+            if (string.IsNullOrEmpty(line) || string.IsNullOrEmpty(name)) return line;
+            var idx = line.IndexOf(": ", StringComparison.Ordinal);
+            return idx > 0 ? line.Substring(idx + 2) : line;
+        }
+
+        /// <summary>Подставить имя в шаблон из настроек.</summary>
+        private static string Fill(string name, string kind)
+        {
+            var fmt = Plugin.FormatFor(kind) ?? "";
             return fmt
                 .Replace("{имя}", name ?? "")
                 .Replace("{name}", name ?? "")
@@ -282,6 +410,34 @@ namespace HidePlayerInput
         {
             return !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b)
                    && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Подсказка при наведении на персонажа показывает, какое действие он уже выбрал.
+        /// Отдаём туда ту же заглушку. Имя не подставляем: подсказка и так про этого персонажа.
+        /// </summary>
+        public static void TooltipPostfix(object[] __args, ref string __result)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(__result)) return;
+                if (!Plugin.CfgHideTooltip.Value || !Plugin.HidingActive()) return;
+
+                if (Plugin.OnlyOthers())
+                {
+                    var ch = (__args != null && __args.Length > 0) ? __args[0] : null;
+                    var name = ch == null
+                        ? null
+                        : AccessTools.Method(ch.GetType(), "GetPrettyName")?.Invoke(ch, null) as string;
+                    if (Same(name, Plugin.LocalActorName())) return;
+                }
+
+                __result = Fill(null, ActionKinds.Classify(__result));
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogError("Подсказка при наведении: " + e);
+            }
         }
 
         /// <summary>
