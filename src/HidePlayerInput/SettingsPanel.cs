@@ -343,6 +343,7 @@ namespace HidePlayerInput
                             + (Plugin.Revealed ? "   (сейчас показано)" : ""));
             GUILayout.Label("Это окно — " + Plugin.CfgPanelKey.Value);
             GUILayout.Label(@"Клавиши меняются в файле BepInEx\config\" + Plugin.Guid + ".cfg");
+            GUILayout.Label("Удалить мод: выйти из игры и запустить Udalit-mod.bat в папке игры");
 
             GUILayout.Space(10);
 

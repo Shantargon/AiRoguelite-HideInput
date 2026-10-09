@@ -24,7 +24,7 @@ namespace HidePlayerInput
     /// Мы ищем функцию по имени через рефлексию: если игра обновится и что-то переименуют,
     /// мод просто напишет в лог, что не нашёл цель, и не станет ничего ломать.
     /// </summary>
-    [BepInPlugin(Guid, "Скрыть ввод игроков", "1.2.0")]
+    [BepInPlugin(Guid, "Скрыть ввод игроков", "1.3.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "shantargon.airoguelite.hideplayerinput";

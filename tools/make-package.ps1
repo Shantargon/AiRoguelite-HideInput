@@ -22,7 +22,8 @@ Copy-Item "$vendor\doorstop_config.ini"  $stage -Force
 Copy-Item "$vendor\.doorstop_version"    $stage -Force
 Copy-Item "$vendor\BepInEx\core"         "$stage\BepInEx" -Recurse -Force
 Copy-Item $modDll                        "$stage\BepInEx\plugins" -Force
-Copy-Item (Join-Path $root "docs\ReadMe-rus.txt") $stage -Force
+Copy-Item (Join-Path $root "docs\ReadMe-rus.txt")  $stage -Force
+Copy-Item (Join-Path $root "docs\Udalit-mod.bat") $stage -Force
 
 New-Item -ItemType Directory -Force $distDir | Out-Null
 $zip = Join-Path $distDir "HidePlayerInput-$version.zip"

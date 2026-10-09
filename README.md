@@ -33,14 +33,29 @@ D:\Steam\steamapps\common\AI Roguelike
 Проверить, что мод встал, можно в файле `BepInEx\LogOutput.log` — там должны быть строчки:
 
 ```
-[Info   :   BepInEx] Loading [Скрыть ввод игроков 1.2.0]
+[Info   :   BepInEx] Loading [Скрыть ввод игроков 1.3.0]
 [Info   :Скрыть ввод игроков] Патч на MakePlayerInputInfoTxt поставлен.
 [Info   :Скрыть ввод игроков] Патч на правку кликом поставлен.
 [Info   :Скрыть ввод игроков] Патч на подсказку при наведении поставлен.
 ```
 
-Удалить мод: убрать `BepInEx\plugins\HidePlayerInput.dll`. Убрать совсем всё:
-удалить `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version` и папку `BepInEx`.
+## Удаление
+
+В архиве лежит `Udalit-mod.bat`, он распаковывается в папку игры рядом с `AI Roguelite.exe`.
+Выйти из игры, запустить его двойным щелчком, ответить `д` — и мода нет: он сносит
+`winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`, папку `BepInEx`, инструкцию
+и сам себя. Сохранения, сценарии и настройки самой игры не трогает.
+
+Если в `BepInEx\plugins` лежат другие моды, файл это замечает и удаляет только
+`HidePlayerInput.dll` с его настройками, а BepInEx оставляет на месте.
+
+Удалять можно и руками: `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`
+и папка `BepInEx`. Только мод — `BepInEx\plugins\HidePlayerInput.dll`.
+
+Название файла латиницей не от хорошей жизни: `Compress-Archive` в Windows PowerShell
+пишет имена в zip без флага UTF-8, и кириллица в них превращается в кракозябры.
+Русский текст внутри самого файла записан в кодировке DOS-866, а первой же строкой
+он переключает на неё консоль — иначе вывод поехал бы на системах с UTF-8 по умолчанию.
 
 ## Важно про мультиплеер
 
