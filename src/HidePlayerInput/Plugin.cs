@@ -30,8 +30,7 @@ namespace HidePlayerInput
         internal static ManualLogSource Log;
 
         internal static ConfigEntry<string> CfgMode;
-        internal static ConfigEntry<string> CfgPlaceholder;
-        internal static ConfigEntry<bool> CfgKeepNames;
+        internal static ConfigEntry<string> CfgFormat;
         internal static ConfigEntry<bool> CfgBlockClickToEdit;
         internal static ConfigEntry<KeyboardShortcut> CfgToggleKey;
         internal static ConfigEntry<bool> CfgDebugLog;
@@ -52,13 +51,11 @@ namespace HidePlayerInput
                     + "«чужие» — только ввод других игроков, свой виден. "
                     + "«выкл» — не скрывать ничего (мод стоит, но ничего не делает)."));
 
-            CfgPlaceholder = Config.Bind("Основное", "Заглушка", "…",
-                new ConfigDescription("Что показывать вместо написанного. Можно оставить пустым."));
-
-            CfgKeepNames = Config.Bind("Основное", "ОставлятьИмена", true,
+            CfgFormat = Config.Bind("Основное", "Формат", "{имя} совершает действие",
                 new ConfigDescription(
-                    "Оставлять имя персонажа перед заглушкой, чтобы было видно, что чей-то ход прошёл. "
-                    + "Если false — от строчки останется только заглушка."));
+                    "Что показывать вместо написанного. «{имя}» подставляется само. "
+                    + "Примеры: «{имя} совершает действие», «{имя}: …», «{имя} что-то задумал», "
+                    + "просто «…» — тогда имя не показывается вообще."));
 
             CfgBlockClickToEdit = Config.Bind("Основное", "ЗапрещатьПравкуКликом", true,
                 new ConfigDescription(
@@ -226,8 +223,6 @@ namespace HidePlayerInput
 
         private static string Build(string actorName, string playerInput)
         {
-            var ph = Plugin.CfgPlaceholder.Value ?? "";
-            var keepNames = Plugin.CfgKeepNames.Value;
             var onlyOthers = Plugin.OnlyOthers();
             var me = onlyOthers ? Plugin.LocalActorName() : null;
 
@@ -235,10 +230,10 @@ namespace HidePlayerInput
             if (!string.IsNullOrEmpty(actorName))
             {
                 if (onlyOthers && Same(actorName, me)) return null;
-                return keepNames ? actorName + ": " + ph : ph;
+                return Fill(actorName);
             }
 
-            // Мультиплеерный случай: несколько ходов разом.
+            // Мультиплеерный случай: несколько ходов разом, по строчке на игрока.
             var lines = (playerInput ?? "").Split('\n');
             var sb = new StringBuilder();
             for (var i = 0; i < lines.Length; i++)
@@ -247,15 +242,23 @@ namespace HidePlayerInput
                 var name = ExtractName(line);
 
                 if (name != null && onlyOthers && Same(name, me))
-                    sb.Append(line);                               // свой ход оставляем как есть
-                else if (name != null && keepNames)
-                    sb.Append(name).Append(": ").Append(ph);
+                    sb.Append(line);        // свой ход оставляем как есть
                 else
-                    sb.Append(ph);                                 // не разобрали строчку — прячем целиком
+                    sb.Append(Fill(name));  // имя не разобрали — подставится пустое, текст спрячется целиком
 
                 if (i < lines.Length - 1) sb.Append('\n');
             }
             return sb.ToString();
+        }
+
+        /// <summary>Подставить имя в шаблон из настроек.</summary>
+        private static string Fill(string name)
+        {
+            var fmt = Plugin.CfgFormat.Value ?? "";
+            return fmt
+                .Replace("{имя}", name ?? "")
+                .Replace("{name}", name ?? "")
+                .Trim();
         }
 
         /// <summary>
