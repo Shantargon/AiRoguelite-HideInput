@@ -7,6 +7,7 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace HidePlayerInput
 {
@@ -23,7 +24,7 @@ namespace HidePlayerInput
     /// Мы ищем функцию по имени через рефлексию: если игра обновится и что-то переименуют,
     /// мод просто напишет в лог, что не нашёл цель, и не станет ничего ломать.
     /// </summary>
-    [BepInPlugin(Guid, "Скрыть ввод игроков", "1.1.0")]
+    [BepInPlugin(Guid, "Скрыть ввод игроков", "1.2.0")]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "shantargon.airoguelite.hideplayerinput";
@@ -59,6 +60,8 @@ namespace HidePlayerInput
         };
         internal static ConfigEntry<KeyboardShortcut> CfgToggleKey;
         internal static ConfigEntry<KeyboardShortcut> CfgPanelKey;
+        internal static ConfigEntry<bool> CfgStartHint;
+        internal static ConfigEntry<float> CfgStartHintSec;
         internal static ConfigEntry<bool> CfgDebugLog;
         internal static ConfigEntry<bool> CfgDebugShot;
 
@@ -68,6 +71,7 @@ namespace HidePlayerInput
         private static Type _glvoType;
         private static Type _editableType;
         private SettingsPanel _panel;
+        private bool _shotDone;
 
         private void Awake()
         {
@@ -122,6 +126,16 @@ namespace HidePlayerInput
                 new ConfigDescription(
                     "Клавиша, которая открывает окно настроек мода прямо в игре."));
 
+            CfgStartHint = Config.Bind("Основное", "ПодсказкаПриЗапуске", true,
+                new ConfigDescription(
+                    "Показывать в углу экрана после запуска игры, какой клавишей открыть "
+                    + "настройки мода. Если мешает — выключите."));
+
+            CfgStartHintSec = Config.Bind("Основное", "ПодсказкаСекунд", 12f,
+                new ConfigDescription(
+                    "Сколько секунд держать эту подсказку на экране.",
+                    new AcceptableValueRange<float>(0f, 120f)));
+
             CfgDebugLog = Config.Bind("Отладка", "ПисатьВЛог", false,
                 new ConfigDescription(
                     "Писать в BepInEx\\LogOutput.log, что именно было спрятано. "
@@ -132,13 +146,11 @@ namespace HidePlayerInput
                     "Отладка: через несколько секунд после запуска само открыть окно настроек и "
                     + "сохранить снимок экрана в папку игры. Нужно только разработчику мода."));
 
-            _panel = gameObject.AddComponent<SettingsPanel>();
-            if (CfgDebugShot.Value)
-            {
-                // Unity не рисует кадры, когда окно не в фокусе, и снимок так не сделать.
-                Application.runInBackground = true;
-                StartCoroutine(DebugShot());
-            }
+            // Окно и горячие клавиши живут на своём объекте, а не на объекте BepInEx.
+            // Объект, созданный до загрузки первой сцены, Unity может не сохранить даже
+            // с DontDestroyOnLoad, поэтому проверяем его при каждой загрузке сцены.
+            SceneManager.sceneLoaded += OnSceneLoaded;
+            EnsureHost();
 
             var harmony = new Harmony(Guid);
 
@@ -193,25 +205,51 @@ namespace HidePlayerInput
             }
         }
 
-        private void Update()
+        private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
-            try
-            {
-                if (CfgPanelKey.Value.IsDown() && _panel != null)
-                    _panel.Toggle();
+            EnsureHost();
+        }
 
-                if (CfgToggleKey.Value.IsDown())
-                {
-                    Revealed = !Revealed;
-                    Log.LogInfo(Revealed ? "Показываю ввод игроков." : "Снова скрываю ввод игроков.");
-                    RedrawLog();
-                }
-            }
-            catch (Exception e)
+        /// <summary>
+        /// Создаёт объект с окном настроек, если его ещё (или уже) нет.
+        /// </summary>
+        private void EnsureHost()
+        {
+            if (_panel != null) return;
+
+            var host = new GameObject("HidePlayerInput_UI");
+            DontDestroyOnLoad(host);
+            _panel = host.AddComponent<SettingsPanel>();
+            Log.LogInfo("Окно настроек готово, клавиша " + CfgPanelKey.Value + ".");
+
+            if (CfgDebugShot.Value && !_shotDone)
             {
-                Log.LogError("Горячая клавиша: " + e);
+                // Unity не рисует кадры, когда окно не в фокусе, и снимок так не сделать.
+                Application.runInBackground = true;
+                _panel.StartCoroutine(DebugShot());
+                Log.LogInfo("Отладка: корутина снимка запущена.");
             }
         }
+
+        /// <summary>
+        /// Своя проверка нажатия вместо KeyboardShortcut.IsDown().
+        /// Штатная, во-первых, читает клавиатуру только старым способом (а игра собрана
+        /// с новой системой ввода), во-вторых, требует, чтобы НИ ОДНА другая клавиша не
+        /// была нажата, перебирая весь список KeyCode вместе с кнопками мыши и геймпада:
+        /// с подключённым контроллером она не срабатывает никогда. Здесь смотрим только
+        /// саму клавишу и её модификаторы, через <see cref="Keys"/>.
+        /// </summary>
+        internal static bool Pressed(ConfigEntry<KeyboardShortcut> cfg)
+        {
+            if (cfg == null) return false;
+            var sc = cfg.Value;
+            if (sc.MainKey == KeyCode.None) return false;
+            if (!Keys.Down(sc.MainKey)) return false;
+            foreach (var mod in sc.Modifiers)
+                if (!Keys.Held(mod)) return false;
+            return true;
+        }
+
 
         /// <summary>Перерисовать все строчки лога, чтобы показ/скрытие применились к уже написанному.</summary>
         internal static void RedrawLog()
@@ -242,6 +280,7 @@ namespace HidePlayerInput
             yield return WaitRealtime(14f);
             if (_panel != null && !_panel.Open) _panel.Toggle();
             yield return WaitRealtime(1.5f);
+            _shotDone = true;
             var path = System.IO.Path.Combine(Paths.GameRootPath, "hideplayerinput-panel.png");
             ScreenCapture.CaptureScreenshot(path);
             Log.LogInfo("Снимок окна настроек: " + path);
