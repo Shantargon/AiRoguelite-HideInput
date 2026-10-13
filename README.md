@@ -1,5 +1,32 @@
-# Скрыть ввод игроков — мод для AI Roguelite
+# Hide Player Input / Скрыть ввод игроков — AI Roguelite plugin
 
+## English
+
+A BepInEx plugin for **AI Roguelite co-op**. It hides what players typed from the game log, while the game's AI still
+receives the full text. When you can read your partner's move before it plays out, the surprise is gone.
+
+Before: `Sir Aldric: quietly sneak up to the chest and pick the lock`
+After: `Sir Aldric takes an action` (each action type gets its own placeholder: talking, using an item, an ability, crafting...).
+
+**Install.** Download `HidePlayerInput-<version>.zip` from [Releases](../../releases) and unzip it into the game folder,
+next to `AI Roguelite.exe`. The archive already contains BepInEx 5.4.23.5 (win x64) and the plugin; nothing else is needed.
+
+**Both players need it**: each game client draws the log on its own computer.
+
+**Settings.** Press `F10` in the game (menu or gameplay) to open the settings window: on/off, hide everyone's moves or only
+other players', placeholder texts, block click-to-edit, hide the hover tooltip that shows an already chosen action.
+`F9` shows / hides the real text again. The same settings live in `BepInEx\config\shantargon.airoguelite.hideplayerinput.cfg`
+(labels are in Russian).
+
+**Uninstall.** Quit the game and run `Udalit-mod.bat` from the game folder (it is in the archive). If other BepInEx plugins are
+present, it removes only `HidePlayerInput.dll`; otherwise it removes BepInEx too. Saves and scenarios are not touched.
+
+**Build:** `dotnet build src/HidePlayerInput/HidePlayerInput.csproj -c Release -p:GameDir="path\to\AI Roguelike"`.
+
+**License:** MIT (see `LICENSE`). The release archive bundles unmodified [BepInEx](https://github.com/BepInEx/BepInEx),
+which is licensed under LGPL-2.1.
+
+## По-русски
 Прячет из игрового лога то, что написали игроки, но **продолжает отправлять это ИИ игры**.
 Нужен для совместной игры: когда заранее видишь, что написал напарник, пропадает весь интерес.
 
@@ -128,16 +155,7 @@ D:\Steam\steamapps\common\AI Roguelike
 
 ## Как это работает внутри
 
-В игре есть ровно одна функция, которая собирает серую строчку «Имя: что игрок написал»:
-
-```csharp
-// GameLogViewObj.cs:288
-public static string MakePlayerInputInfoTxt(string actorName, string playerInput)
-{
-    return Utils.Colorize(((!Utils.IsNullOrEmpty(actorName)) ? (actorName + ": ") : "")
-                          + Utils.CapitalizeFirstChar(playerInput), "cccccc");
-}
-```
+В игре есть ровно одна функция, которая собирает серую строчку «Имя: что игрок написал», — `GameLogViewObj.MakePlayerInputInfoTxt(actorName, playerInput)` (`GameLogViewObj.cs:288`). Она приклеивает к тексту игрока «Имя: », делает первую букву заглавной и красит строчку в серый.
 
 Её результат уходит только в текст на экране — `GameLogViewObj.UpdateGraphics` (строка 528)
 и `GameplayManager.LogTryStrWCurrentActor` (строка 14961). Больше нигде она не используется.
@@ -242,15 +260,7 @@ but you have switched active Input handling to Input System package in Player Se
 ### Почему обычным модом (текстовыми файлами) это не сделать
 
 Официальная система модов игры (`ai-roguelite-config\my-mods`) подменяет только текстовые файлы
-промтов. А строчка с указаниями игрока собирается так:
-
-```csharp
-// InteractionLogic.cs:170-177
-return new LS.LocWModded(
-    baseTryStrs.locStr + " " + LS.I.GetLocStr("player-inst-w-paren", ("str", playerInst), ...),   // видно в чате
-    baseTryStrs.maybeModdedEnStr + " " + SS.I.chatGptPromptsDict["player-inst-w-paren"]...        // уходит ИИ
-);
-```
+промтов. А строчку с указаниями игрока игра собирает в двух вариантах сразу (`InteractionLogic.cs:170-177`): видимый — через таблицу переводов (`LS.I.GetLocStr("player-inst-w-paren", ...)`), а тот, что уходит ИИ, — из `SS.I.chatGptPromptsDict["player-inst-w-paren"]`.
 
 Файл мода попадает в `chatGptPromptsDict`, то есть правит **то, что видит ИИ**, а не то, что
 видно в чате. Видимый текст берётся из таблицы переводов Unity (`StringTable "MyTable1"`), которая
@@ -279,3 +289,7 @@ dotnet build src/HidePlayerInput/HidePlayerInput.csproj -c Release -p:GameDir="�
 
 - AI Roguelite, сборка от 15.08.2026, Unity 2022.3.15f1, Mono, x64
 - BepInEx 5.4.23.5 (win x64)
+
+## Лицензия
+
+MIT (файл `LICENSE`). В архив релиза входит BepInEx без изменений ([BepInEx](https://github.com/BepInEx/BepInEx), лицензия LGPL-2.1).
